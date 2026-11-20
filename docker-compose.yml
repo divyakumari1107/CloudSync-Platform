@@ -1,0 +1,72 @@
+services:
+  aws_node:
+    build: ./services/aws_node
+    container_name: cloudsync-aws-node
+    expose:
+      - "7001"
+    environment:
+      - PORT=7001
+      - CLOUD_PROVIDER=AWS
+      - REGION=us-east-1
+    networks:
+      - cloudsync-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7001/health"]
+      interval: 8s
+      timeout: 4s
+      retries: 3
+      start_period: 4s
+    restart: unless-stopped
+
+  azure_node:
+    build: ./services/azure_node
+    container_name: cloudsync-azure-node
+    expose:
+      - "7002"
+    environment:
+      - PORT=7002
+      - CLOUD_PROVIDER=AZURE
+      - REGION=eastus2
+    networks:
+      - cloudsync-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7002/health"]
+      interval: 8s
+      timeout: 4s
+      retries: 3
+      start_period: 4s
+    restart: unless-stopped
+
+  sync_daemon:
+    build: ./services/sync_daemon
+    container_name: cloudsync-sync-daemon
+    expose:
+      - "7003"
+    environment:
+      - PORT=7003
+      - AWS_NODE_URL=http://aws_node:7001
+      - AZURE_NODE_URL=http://azure_node:7002
+    networks:
+      - cloudsync-net
+    restart: unless-stopped
+
+  ingress:
+    image: nginx:alpine
+    container_name: cloudsync-ingress
+    ports:
+      - "8070:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./web:/usr/share/nginx/html:ro
+    depends_on:
+      aws_node:
+        condition: service_healthy
+      azure_node:
+        condition: service_healthy
+    networks:
+      - cloudsync-net
+    restart: unless-stopped
+
+networks:
+  cloudsync-net:
+    driver: bridge

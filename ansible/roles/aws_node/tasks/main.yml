@@ -1,0 +1,51 @@
+---
+- name: Ensure Python and Nginx are installed on AWS EC2
+  package:
+    name:
+      - python3
+      - python3-pip
+      - curl
+      - jq
+    state: present
+
+- name: Install AWS CloudWatch Logs & Metrics Agent
+  copy:
+    content: |
+      {
+        "agent": {
+          "metrics_collection_interval": 10,
+          "run_as_user": "root"
+        },
+        "metrics": {
+          "namespace": "CloudSync/AWS",
+          "metrics_collected": {
+            "cpu": {
+              "measurement": ["cpu_usage_idle", "cpu_usage_iowait", "cpu_usage_system"],
+              "totalcpu": true
+            },
+            "mem": {
+              "measurement": ["mem_used_percent"]
+            }
+          }
+        }
+      }
+    dest: /etc/aws-cloudwatch-agent.json
+    mode: '0644'
+
+- name: Configure AWS Primary Node Service Environment
+  copy:
+    content: |
+      CLOUD_PROVIDER=AWS
+      AWS_REGION=us-east-1
+      ROLE=PRIMARY
+      STORAGE_BUCKET=cloudsync-primary-vault
+      CLOUDWATCH_ENABLED=true
+    dest: /etc/cloudsync-node.env
+    mode: '0600'
+
+- name: Ensure Primary Application Service is Started
+  service:
+    name: cloudsync-aws
+    state: started
+    enabled: yes
+  ignore_errors: yes

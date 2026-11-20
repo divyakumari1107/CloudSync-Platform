@@ -1,0 +1,49 @@
+---
+# Master Multi-Cloud Disaster Recovery Orchestration Playbook
+- name: "Phase 1: Configure AWS Primary Node & CloudWatch Telemetry"
+  hosts: aws_primary
+  become: yes
+  roles:
+    - aws_node
+
+- name: "Phase 2: Configure Azure Standby Node & Azure Monitor Telemetry"
+  hosts: azure_secondary
+  become: yes
+  roles:
+    - azure_node
+
+- name: "Phase 3: Deploy Automated S3 <-> Azure Blob Replication Engine"
+  hosts: sync_agents
+  become: yes
+  roles:
+    - sync_engine
+
+- name: "Phase 4: Run Post-Deployment Cross-Cloud Health & RPO Check"
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Verify AWS Primary Node Health Probe
+      uri:
+        url: "http://aws_node:7001/health"
+        status_code: 200
+        return_content: yes
+      register: aws_health
+      retries: 3
+      delay: 5
+
+    - name: Verify Azure Standby Node Health Probe
+      uri:
+        url: "http://azure_node:7002/health"
+        status_code: 200
+        return_content: yes
+      register: azure_health
+      retries: 3
+      delay: 5
+
+    - name: Display Multi-Cloud Cluster State
+      debug:
+        msg: >
+          Multi-Cloud DR Cluster Ready!
+          AWS Region: {{ hostvars['aws-ec2-01']['region'] }} (Status: {{ aws_health.json.status }})
+          Azure Region: {{ hostvars['azure-vm-01']['region'] }} (Status: {{ azure_health.json.status }})
+          RPO Target: < 1s | RTO Target: < 30s

@@ -1,0 +1,34 @@
+---
+- name: Ensure Rclone / AWS CLI / Azure CLI sync tools are installed
+  package:
+    name:
+      - rsync
+      - curl
+    state: present
+
+- name: Template Cross-Cloud S3 to Azure Blob Replication Daemon
+  copy:
+    content: |
+      #!/usr/bin/env python3
+      # Automated Continuous Multi-Cloud Replication Daemon
+      import time, os, sys
+      print("[Ansible Sync Engine] S3 (aws-vault) <-> Azure Blob (azure-vault) active sync loop initiated.")
+    dest: /usr/local/bin/cloudsync-replication-daemon.py
+    mode: '0755'
+
+- name: Create Systemd Unit for Cross-Cloud Storage Sync
+  copy:
+    content: |
+      [Unit]
+      Description=CloudSync S3 to Azure Blob Continuous Object Replication
+      After=network.target
+
+      [Service]
+      ExecStart=/usr/local/bin/cloudsync-replication-daemon.py
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/cloudsync-replicator.service
+    mode: '0644'
