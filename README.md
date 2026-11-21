@@ -1,5 +1,7 @@
 # CloudSync – Multi-Cloud Disaster Recovery & Automated Failover Platform
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-success?style=for-the-badge&logo=github)](https://divyakumari1107.github.io/CloudSync-Platform/)
+[![Vercel Deployment](https://img.shields.io/badge/Deployed-Vercel-black.svg?logo=vercel)](https://cloudsync-platform.vercel.app/)
 [![Cloud Providers](https://img.shields.io/badge/Multi--Cloud-AWS%20%7C%20Microsoft%20Azure-orange.svg)](terraform/main.tf)
 [![IaC](https://img.shields.io/badge/IaC-Terraform%201.5%2B-purple.svg)](terraform/)
 [![Configuration](https://img.shields.io/badge/Config-Ansible%20Automation-red.svg)](ansible/)
@@ -8,6 +10,19 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 An enterprise multi-cloud active-passive disaster recovery (DR) and automated cross-cloud replication platform spanning **AWS (us-east-1)** and **Microsoft Azure (East US 2)**, provisioned with modular **Terraform** infrastructure as code, automated with **Ansible** playbooks, and dynamically routed via **Nginx** reverse proxy edge failover.
+
+---
+
+## 🌐 Live Production Deployments
+
+This project features a live interactive cloud dashboard visualizing the active-passive failover state machine, simulated latency degradation, RPO/RTO metrics, and multi-cloud topology:
+
+| Resource | Live Link | Status |
+| :--- | :--- | :--- |
+| **CloudSync Live Dashboard (GitHub Pages)** | **[https://divyakumari1107.github.io/CloudSync-Platform/](https://divyakumari1107.github.io/CloudSync-Platform/)** | 🟢 **Live (24/7)** |
+| **CloudSync Live Mirror (Vercel)** | **[https://cloudsync-platform.vercel.app/](https://cloudsync-platform.vercel.app/)** | 🟢 **Production Ready** |
+
+---
 
 ---
 
