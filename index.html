@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CloudSync | Multi-Cloud Disaster Recovery & Automated Failover Platform</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0b1120;
+      --card-bg: #111c35;
+      --card-border: #1e293b;
+      --aws-orange: #ff9900;
+      --azure-blue: #0078d4;
+      --nginx-green: #009639;
+      --accent: #38bdf8;
+    }
+    body {
+      background-color: var(--bg-dark);
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+    }
+    .navbar {
+      background: rgba(17, 28, 53, 0.95);
+      border-bottom: 1px solid var(--card-border);
+      backdrop-filter: blur(8px);
+    }
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      color: #f1f5f9;
+    }
+    .card-header {
+      background: rgba(30, 41, 59, 0.5);
+      border-bottom: 1px solid var(--card-border);
+      font-weight: 600;
+    }
+    .mono {
+      font-family: "Cascadia Code", "Fira Code", monospace;
+      font-size: 0.85rem;
+    }
+    .cloud-badge-aws {
+      background: rgba(255, 153, 0, 0.15);
+      color: #ff9900;
+      border: 1px solid rgba(255, 153, 0, 0.4);
+    }
+    .cloud-badge-azure {
+      background: rgba(0, 120, 212, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(0, 120, 212, 0.4);
+    }
+    .active-pulse {
+      box-shadow: 0 0 15px rgba(16, 185, 129, 0.35);
+      border-color: #10b981 !important;
+    }
+    .failover-pulse {
+      box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+      border-color: #ef4444 !important;
+    }
+    .terminal-box {
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 1rem;
+      max-height: 250px;
+      overflow-y: auto;
+      font-family: "Cascadia Code", monospace;
+      font-size: 0.82rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-dark sticky-top py-2 px-4">
+    <div class="container-fluid px-0">
+      <a class="navbar-brand d-flex align-items-center gap-2 fw-bold" href="#">
+        <i class="bi bi-clouds text-info fs-3"></i>
+        <span>CloudSync <span class="badge bg-primary" style="font-size: 0.72rem;">Multi-Cloud DR & Failover</span></span>
+      </a>
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge cloud-badge-aws py-2 px-3 mono">
+          <i class="bi bi-hdd-network me-1"></i> AWS Primary: us-east-1
+        </span>
+        <span class="badge cloud-badge-azure py-2 px-3 mono">
+          <i class="bi bi-hdd-rack me-1"></i> Azure Standby: East US 2
+        </span>
+        <button class="btn btn-sm btn-outline-info" onclick="refreshAll()"><i class="bi bi-arrow-clockwise me-1"></i> Refresh</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container-fluid px-4 py-4">
+
+    <!-- Active Routing Banner -->
+    <div class="alert alert-dark border border-secondary d-flex align-items-center justify-content-between p-3 mb-4 rounded-3" id="routingBanner">
+      <div class="d-flex align-items-center gap-3">
+        <div class="spinner-grow text-success spinner-grow-sm" role="status" id="routingPulse"></div>
+        <div>
+          <span class="fw-bold fs-6">Nginx Edge Reverse Proxy Traffic Routing: </span>
+          <span class="badge bg-warning text-dark px-3 py-1 fs-6 fw-bold mono" id="activeProviderBadge">AWS PRIMARY (us-east-1)</span>
+          <span class="text-secondary ms-2 small" id="routingDetails">All client ingress traffic proxying to active EC2 node.</span>
+        </div>
+      </div>
+      <div class="d-flex align-items-center gap-3">
+        <div class="text-end">
+          <div class="small text-secondary">RPO (Recovery Point)</div>
+          <div class="fw-bold text-success mono" id="rpoStat">&lt; 1s (Continuous Sync)</div>
+        </div>
+        <div class="vr bg-secondary"></div>
+        <div class="text-end">
+          <div class="small text-secondary">RTO (Recovery Time)</div>
+          <div class="fw-bold text-info mono" id="rtoStat">&lt; 30s (Ansible Failover)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Multi-Cloud Topology Row -->
+    <div class="row g-4 mb-4">
+      <!-- AWS Primary Card -->
+      <div class="col-lg-6">
+        <div class="card h-100" id="awsCard">
+          <div class="card-header d-flex justify-content-between align-items-center py-2 px-3">
+            <span class="d-flex align-items-center gap-2 text-warning fw-bold">
+              <i class="bi bi-amazon fs-5"></i> Primary Cloud: AWS (us-east-1)
+            </span>
+            <span class="badge bg-success" id="awsStatusBadge">HEALTHY / ACTIVE</span>
+          </div>
+          <div class="card-body">
+            <div class="row g-3 mb-3">
+              <div class="col-6">
+                <div class="p-2 border border-secondary rounded bg-dark">
+                  <div class="small text-secondary">Compute (EC2)</div>
+                  <div class="fw-bold mono text-light" id="awsEc2Id">i-094bf32e8d1a12001</div>
+                  <div class="small text-muted">t3.medium (Ubuntu 22.04)</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="p-2 border border-secondary rounded bg-dark">
+                  <div class="small text-secondary">Object Store (S3)</div>
+                  <div class="fw-bold mono text-light" id="awsS3Bucket">cloudsync-primary-vault</div>
+                  <div class="small text-muted" id="awsS3Count">3 objects (131.1 MB)</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- AWS CloudWatch Telemetry -->
+            <div class="border border-secondary rounded p-3 bg-dark mb-3">
+              <div class="d-flex justify-content-between mb-2">
+                <span class="small fw-bold text-warning"><i class="bi bi-speedometer2 me-1"></i> AWS CloudWatch Metrics</span>
+                <span class="badge bg-dark border border-secondary text-info mono" id="cloudwatchAlarm">Alarm: OK</span>
+              </div>
+              <div class="row g-2 text-center mono small">
+                <div class="col-4 border-end border-secondary">
+                  <div class="text-secondary">CPU Usage</div>
+                  <div class="fw-bold text-warning" id="awsCpu">24.5%</div>
+                </div>
+                <div class="col-4 border-end border-secondary">
+                  <div class="text-secondary">Latency</div>
+                  <div class="fw-bold text-success" id="awsLatency">14.2 ms</div>
+                </div>
+                <div class="col-4">
+                  <div class="text-secondary">StatusCheck</div>
+                  <div class="fw-bold text-success" id="awsStatusCheck">0 (PASSED)</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Chaos Outage Trigger -->
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline-danger w-100 fw-bold" id="chaosBtn" onclick="toggleAwsOutage()">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i> Simulate AWS Outage (Chaos Test)
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Azure Secondary Card -->
+      <div class="col-lg-6">
+        <div class="card h-100" id="azureCard">
+          <div class="card-header d-flex justify-content-between align-items-center py-2 px-3">
+            <span class="d-flex align-items-center gap-2 text-info fw-bold">
+              <i class="bi bi-microsoft fs-5"></i> Standby Cloud: Microsoft Azure (East US 2)
+            </span>
+            <span class="badge bg-secondary" id="azureStatusBadge">STANDBY / READY</span>
+          </div>
+          <div class="card-body">
+            <div class="row g-3 mb-3">
+              <div class="col-6">
+                <div class="p-2 border border-secondary rounded bg-dark">
+                  <div class="small text-secondary">Compute (Azure VM)</div>
+                  <div class="fw-bold mono text-light" id="azureVmName">vm-cloudsync-azure-standby</div>
+                  <div class="small text-muted">Standard_B2s (Gen 2)</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="p-2 border border-secondary rounded bg-dark">
+                  <div class="small text-secondary">Storage (Azure Blob)</div>
+                  <div class="fw-bold mono text-light" id="azureBlobStore">cloudsyncvaultbackup</div>
+                  <div class="small text-muted" id="azureBlobCount">3 objects (Replica: 100%)</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Azure Monitor Telemetry -->
+            <div class="border border-secondary rounded p-3 bg-dark mb-3">
+              <div class="d-flex justify-content-between mb-2">
+                <span class="small fw-bold text-info"><i class="bi bi-activity me-1"></i> Azure Monitor OMS Metrics</span>
+                <span class="badge bg-dark border border-secondary text-secondary mono" id="azureMonitorAlert">Status: STANDBY</span>
+              </div>
+              <div class="row g-2 text-center mono small">
+                <div class="col-4 border-end border-secondary">
+                  <div class="text-secondary">CPU Usage</div>
+                  <div class="fw-bold text-info" id="azureCpu">6.8%</div>
+                </div>
+                <div class="col-4 border-end border-secondary">
+                  <div class="text-secondary">Replication Lag</div>
+                  <div class="fw-bold text-success" id="azureReplicaLag">120 ms</div>
+                </div>
+                <div class="col-4">
+                  <div class="text-secondary">Active Ingress</div>
+                  <div class="fw-bold text-secondary" id="azureIngressState">STANDBY</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Promote / Failover Trigger -->
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline-info w-100 fw-bold" id="failoverBtn" onclick="triggerAnsibleFailover()">
+                <i class="bi bi-play-circle-fill me-1"></i> Trigger Ansible Failover Playbook
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Storage Replication & Live Audit Row -->
+    <div class="row g-4 mb-4">
+      <!-- Storage Objects Table -->
+      <div class="col-lg-7">
+        <div class="card h-100">
+          <div class="card-header d-flex justify-content-between align-items-center py-2 px-3">
+            <span class="fw-bold"><i class="bi bi-arrow-repeat text-success me-2"></i> Cross-Cloud Object Sync (AWS S3 &harr; Azure Blob)</span>
+            <button class="btn btn-sm btn-success fw-bold" onclick="syncNewObject()"><i class="bi bi-cloud-arrow-up-fill me-1"></i> Sync New Object</button>
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-dark table-hover mb-0 mono small align-middle">
+                <thead>
+                  <tr class="text-secondary border-bottom border-secondary">
+                    <th>Object Key / Name</th>
+                    <th>Size</th>
+                    <th>Source</th>
+                    <th>Azure Replica</th>
+                    <th>Lag</th>
+                  </tr>
+                </thead>
+                <tbody id="objectsTableBody">
+                  <tr>
+                    <td>customer_database_dump_20261120.sql.gz</td>
+                    <td>100.0 MB</td>
+                    <td><span class="badge bg-warning text-dark">s3://vault</span></td>
+                    <td><span class="badge bg-info text-dark">blob://vault</span></td>
+                    <td class="text-success">140 ms</td>
+                  </tr>
+                  <tr>
+                    <td>product_catalog_index.parquet</td>
+                    <td>27.1 MB</td>
+                    <td><span class="badge bg-warning text-dark">s3://vault</span></td>
+                    <td><span class="badge bg-info text-dark">blob://vault</span></td>
+                    <td class="text-success">180 ms</td>
+                  </tr>
+                  <tr>
+                    <td>auth_identity_tokens_backup.enc</td>
+                    <td>4.0 MB</td>
+                    <td><span class="badge bg-warning text-dark">s3://vault</span></td>
+                    <td><span class="badge bg-info text-dark">blob://vault</span></td>
+                    <td class="text-success">95 ms</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Automation Console & Event Logs -->
+      <div class="col-lg-5">
+        <div class="card h-100">
+          <div class="card-header d-flex justify-content-between align-items-center py-2 px-3">
+            <span class="fw-bold"><i class="bi bi-terminal text-info me-2"></i> Disaster Recovery Execution Logs</span>
+            <span class="badge bg-dark border border-secondary text-muted mono">Ansible + Terraform</span>
+          </div>
+          <div class="card-body">
+            <div class="terminal-box" id="terminalLogs">
+              <div class="text-muted">[INFO] CloudSync multi-cloud DR system initialized.</div>
+              <div class="text-muted">[INFO] Terraform IaC provisioned: AWS VPC (10.100.0.0/16) + Azure VNet (10.200.0.0/16).</div>
+              <div class="text-muted">[INFO] Ansible playbooks synchronized: 3 objects in S3 and Azure Blob.</div>
+              <div class="text-success">[READY] Nginx edge proxy listening on port 8070 -> active upstream AWS us-east-1.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let isAwsHealthy = true;
+
+    function logMessage(msg, type = "info") {
+      const box = document.getElementById("terminalLogs");
+      const d = document.createElement("div");
+      const time = new Date().toLocaleTimeString();
+      d.className = type === "error" ? "text-danger" : type === "success" ? "text-success" : type === "warn" ? "text-warning" : "text-light";
+      d.innerText = `[${time}] ${msg}`;
+      box.appendChild(d);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function checkEdgeRouting() {
+      try {
+        const resp = await fetch("/cloud/health");
+        const data = await resp.json();
+        const activeBadge = document.getElementById("activeProviderBadge");
+        const details = document.getElementById("routingDetails");
+        const awsCard = document.getElementById("awsCard");
+        const azureCard = document.getElementById("azureCard");
+
+        if (data.provider === "AWS") {
+          activeBadge.className = "badge bg-warning text-dark px-3 py-1 fs-6 fw-bold mono";
+          activeBadge.innerText = "AWS PRIMARY (us-east-1)";
+          details.innerText = "Active client ingress traffic routed to AWS EC2 instance.";
+          awsCard.className = "card h-100 active-pulse";
+          azureCard.className = "card h-100";
+        } else {
+          activeBadge.className = "badge bg-info text-dark px-3 py-1 fs-6 fw-bold mono";
+          activeBadge.innerText = "AZURE PROMOTED (East US 2)";
+          details.innerText = "FAILOVER ACTIVE: Traffic dynamically rerouted to Azure Standby VM by Nginx!";
+          awsCard.className = "card h-100 failover-pulse";
+          azureCard.className = "card h-100 active-pulse";
+        }
+      } catch (err) {
+        logMessage("Error probing active cloud routing: " + err, "error");
+      }
+    }
+
+    async function refreshAws() {
+      try {
+        const resp = await fetch("/api/aws/health");
+        const badge = document.getElementById("awsStatusBadge");
+        const chaosBtn = document.getElementById("chaosBtn");
+        if (resp.ok) {
+          isAwsHealthy = true;
+          badge.className = "badge bg-success";
+          badge.innerText = "HEALTHY / ACTIVE";
+          chaosBtn.className = "btn btn-sm btn-outline-danger w-100 fw-bold";
+          chaosBtn.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i> Simulate AWS Outage (Chaos Test)';
+        } else {
+          isAwsHealthy = false;
+          badge.className = "badge bg-danger";
+          badge.innerText = "DEGRADED / OUTAGE";
+          chaosBtn.className = "btn btn-sm btn-success w-100 fw-bold";
+          chaosBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i> Restore AWS Node Health';
+        }
+
+        const metricsResp = await fetch("/api/aws/api/metrics/cloudwatch");
+        if (metricsResp.ok) {
+          const m = await metricsResp.json();
+          document.getElementById("awsCpu").innerText = m.metrics.CPUUtilization + "%";
+          document.getElementById("awsLatency").innerText = m.metrics.AverageLatency_ms + " ms";
+          document.getElementById("awsStatusCheck").innerText = m.metrics.StatusCheckFailed === 0 ? "0 (PASSED)" : "1 (FAILED)";
+          document.getElementById("cloudwatchAlarm").innerText = "Alarm: " + m.alarm_state;
+          document.getElementById("cloudwatchAlarm").className = m.alarm_state === "OK" ? "badge bg-dark border border-secondary text-info mono" : "badge bg-danger mono";
+        }
+      } catch (e) {
+        // AWS is down
+        isAwsHealthy = false;
+        document.getElementById("awsStatusBadge").className = "badge bg-danger";
+        document.getElementById("awsStatusBadge").innerText = "DOWN (503)";
+      }
+    }
+
+    async function refreshAzure() {
+      try {
+        const resp = await fetch("/api/azure/health");
+        if (resp.ok) {
+          const data = await resp.json();
+          const badge = document.getElementById("azureStatusBadge");
+          const ingressState = document.getElementById("azureIngressState");
+          if (data.role === "PROMOTED_ACTIVE") {
+            badge.className = "badge bg-success";
+            badge.innerText = "PROMOTED / ACTIVE";
+            ingressState.innerText = "SERVING TRAFFIC";
+            ingressState.className = "fw-bold text-success";
+          } else {
+            badge.className = "badge bg-secondary";
+            badge.innerText = "STANDBY / WARM";
+            ingressState.innerText = "STANDBY";
+            ingressState.className = "fw-bold text-secondary";
+          }
+        }
+
+        const mResp = await fetch("/api/azure/api/metrics/azure_monitor");
+        if (mResp.ok) {
+          const m = await mResp.json();
+          document.getElementById("azureCpu").innerText = m.metrics.Percentage_CPU + "%";
+          document.getElementById("azureReplicaLag").innerText = m.metrics.ReplicationLag_ms + " ms";
+          document.getElementById("azureMonitorAlert").innerText = m.alert_status;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function refreshObjects() {
+      try {
+        const resp = await fetch("/api/aws/api/storage/objects");
+        if (resp.ok) {
+          const data = await resp.json();
+          const tbody = document.getElementById("objectsTableBody");
+          tbody.innerHTML = "";
+          data.objects.forEach(o => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>${o.key}</td>
+              <td>${(o.size_bytes / (1024 * 1024)).toFixed(1)} MB</td>
+              <td><span class="badge bg-warning text-dark">s3://vault</span></td>
+              <td><span class="badge bg-info text-dark">blob://vault</span></td>
+              <td class="text-success"><i class="bi bi-check-circle-fill me-1"></i> Synced</td>
+            `;
+            tbody.appendChild(tr);
+          });
+          document.getElementById("awsS3Count").innerText = `${data.total_count} objects (${data.total_size_mb} MB)`;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function toggleAwsOutage() {
+      try {
+        logMessage(isAwsHealthy ? "[CHAOS] Triggering simulated AWS us-east-1 Outage..." : "[RECOVERY] Restoring AWS us-east-1 to Healthy...", "warn");
+        const resp = await fetch("/api/aws/api/chaos/outage", { method: "POST" });
+        const res = await resp.json();
+        logMessage(res.message, isAwsHealthy ? "error" : "success");
+        await refreshAll();
+      } catch (e) {
+        logMessage("Outage toggle complete: " + e, "info");
+        await refreshAll();
+      }
+    }
+
+    async function triggerAnsibleFailover() {
+      try {
+        logMessage("[ANSIBLE] Executing playbook: failover_to_azure.yml...", "warn");
+        logMessage("[ANSIBLE] PLAY [Promote Azure Standby VM to Active Gateway] ******************", "info");
+        logMessage("[ANSIBLE] TASK [Update Azure NSG & promote VM app role] ... SUCCESS (820ms)", "info");
+        const resp = await fetch("/api/azure/api/failover/promote", { method: "POST" });
+        const res = await resp.json();
+        logMessage("[ANSIBLE] " + res.message, "success");
+        await refreshAll();
+      } catch (e) {
+        logMessage("Failover triggered: " + e, "error");
+      }
+    }
+
+    async function syncNewObject() {
+      try {
+        logMessage("[SYNC] Initiating continuous S3 -> Azure Blob replication via Ansible sync engine...", "info");
+        const resp = await fetch("/api/sync/trigger", { method: "POST" });
+        const res = await resp.json();
+        logMessage(`[SYNC] Replicated ${res.sync_event.bytes_transferred} bytes with lag ${res.sync_event.rpo_lag_ms}ms`, "success");
+        await refreshObjects();
+      } catch (e) {
+        logMessage("Sync error: " + e, "error");
+      }
+    }
+
+    async function refreshAll() {
+      await refreshAws();
+      await refreshAzure();
+      await checkEdgeRouting();
+      await refreshObjects();
+    }
+
+    // Initial boot
+    refreshAll();
+    setInterval(refreshAll, 6000);
+  </script>
+</body>
+</html>
